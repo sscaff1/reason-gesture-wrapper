@@ -5,14 +5,7 @@ type coordinates = {
   y: float,
 };
 
-type mutableCoordinates =
-  ref(
-    {
-      .
-      "x": float,
-      "y": float,
-    },
-  );
+type mutableCoordinates = ref(Animated.ValueXY.jsValue);
 
 type size = {
   width: float,
