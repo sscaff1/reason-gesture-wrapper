@@ -1,0 +1,27 @@
+{
+  "name": "reasonImageViewer",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "start": "node node_modules/react-native/local-cli/cli.js start",
+    "build": "bsb -make-world -clean-world",
+    "watch": "bsb -make-world -clean-world -w",
+    "test": "jest"
+  },
+  "dependencies": {
+    "bs-platform": "^3.1.4",
+    "bs-react-native": "^0.8.0",
+    "react": "^16.4.0",
+    "react-native": "0.55.4",
+    "reason-react": "^0.4.2"
+  },
+  "devDependencies": {
+    "babel-jest": "22.4.4",
+    "babel-preset-react-native": "4.0.0",
+    "jest": "22.4.4",
+    "react-test-renderer": "16.3.1"
+  },
+  "jest": {
+    "preset": "react-native"
+  }
+}

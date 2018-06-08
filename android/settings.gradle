@@ -1,0 +1,3 @@
+rootProject.name = 'reasonImageViewer'
+
+include ':app'
