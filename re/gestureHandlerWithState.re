@@ -1,16 +1,14 @@
 open BsReactNative;
 
 type coordinates = {
-  x: float,
-  y: float,
+  mutable x: float,
+  mutable y: float,
 };
 
 type size = {
   width: float,
   height: float,
 };
-
-type moveDescription = (float, float, float);
 
 type gestureTypes =
   | Corner(coordinates)
@@ -20,13 +18,14 @@ type gestureTypes =
 
 type state = {
   pan: Animated.ValueXY.t,
-  panResponder: ref(option(PanResponder.t)),
-  childCoordinates: coordinates,
+  panResponder: option(PanResponder.t),
   panListener: ref(string),
 };
 
 type action =
-  | UpdateChildCoordinates(coordinates);
+  | SetPanResponder;
+
+let childCoordinates = {x: 0., y: 0.};
 
 let resetAnimatedPan = pan => Animated.ValueXY.extractOffset(pan);
 
@@ -49,14 +48,6 @@ let getWindowSize = () => {
   };
 };
 
-let getInitialCenterPosition = childSize => {
-  let windowSize = getWindowSize();
-  {
-    x: (windowSize.width -. childSize.width) /. 2.,
-    y: (windowSize.height -. childSize.height) /. 2.,
-  };
-};
-
 let respondToGesture = (gesture, pan) =>
   switch (gesture) {
   | Corner({x, y}) => moveChild(~x, ~y, ~pan, ())
@@ -65,15 +56,14 @@ let respondToGesture = (gesture, pan) =>
   | TouchMovement => Js.log("Touched or moved the child component")
   };
 
-let handleTouch = (childSize, self) => {
-  let state = self.ReasonReact.state;
-  resetAnimatedPan(state.pan);
+let handleTouch = (childSize, pan) => {
+  resetAnimatedPan(pan);
   let windowSize = getWindowSize();
-  let childLeft = state.childCoordinates.x;
+  let childLeft = childCoordinates.x;
   let childRight = childLeft +. childSize.width;
-  let childTop = state.childCoordinates.y;
+  let childTop = childCoordinates.y;
   let childBottom = childTop +. childSize.height;
-  state.pan
+  pan
   |> (
     switch (childLeft, childTop, childRight, childBottom) {
     | (_, t, r, _) when t < 0. && r > windowSize.width =>
@@ -100,58 +90,47 @@ let handleTouch = (childSize, self) => {
 
 let component = ReasonReact.reducerComponent("GestureHandler");
 
-let make =
-    (
-      ~childSize: size,
-      ~initialChildCoordinates=getInitialCenterPosition(childSize),
-      children,
-    ) => {
+let make = (~childSize: size, children) => {
   ...component,
   initialState: () => {
     pan: Animated.ValueXY.create(~x=0., ~y=0.),
-    panResponder: ref(None),
-    childCoordinates: initialChildCoordinates,
+    panResponder: None,
     panListener: ref(""),
   },
   reducer: (action, state) =>
     switch (action) {
-    | UpdateChildCoordinates(c) =>
+    | SetPanResponder =>
       ReasonReact.Update({
         ...state,
-        childCoordinates: {
-          x: c.x,
-          y: c.y,
-        },
+        panResponder:
+          Some(
+            PanResponder.(
+              create(
+                ~onStartShouldSetPanResponder=callback((_e, _g) => true),
+                ~onPanResponderMove=`update([`XY(state.pan)]),
+                ~onPanResponderRelease=
+                  callback((_e, _g) => handleTouch(childSize, state.pan)),
+                (),
+              )
+            ),
+          ),
       })
     },
   didMount: self => {
-    let {x, y} = initialChildCoordinates;
-    self.state.panResponder :=
-      Some(
-        PanResponder.(
-          create(
-            ~onStartShouldSetPanResponder=callback((_e, _g) => true),
-            ~onPanResponderMove=`update([`XY(self.state.pan)]),
-            ~onPanResponderRelease=
-              callback((_e, _g) => self.handle(handleTouch, childSize)),
-            (),
-          )
-        ),
-      );
     self.state.panListener :=
-      Animated.ValueXY.addListener(self.state.pan, raw =>
-        self.send(UpdateChildCoordinates({x: raw##x, y: raw##y}))
+      Animated.ValueXY.addListener(
+        self.state.pan,
+        raw => {
+          childCoordinates.x = raw##x;
+          childCoordinates.y = raw##y;
+        },
       );
-    (x, y, 0.)
-    |> self.handle(((x, y, duration), self) =>
-         moveChild(~x, ~y, ~duration, ~pan=self.state.pan, ())
-       );
-    ();
+    self.send(SetPanResponder);
   },
   willUnmount: ({state}) =>
     state.panListener^ |> Animated.ValueXY.removeListener(state.pan),
   render: ({state}) =>
-    switch (state.panResponder^) {
+    switch (state.panResponder) {
     | Some(panHandler) =>
       <View responderHandlers=(PanResponder.panHandlers(panHandler))>
         <Animated.View

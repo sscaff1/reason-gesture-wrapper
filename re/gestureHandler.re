@@ -101,10 +101,22 @@ let panHandlers = PanResponder.panHandlers(panResponder);
 
 let component = ReasonReact.statelessComponent("GestureHandler");
 
-let make = children => {
+let make = (~childSize, children) => {
   ...component,
+  didMount: _self => setChildSize(childSize),
   render: _self =>
     <View responderHandlers=panHandlers>
-      <Animated.View> ...children </Animated.View>
+      <Animated.View
+        style=Style.(
+                style([
+                  Transform.makeAnimated(
+                    ~translateX=Animated.ValueXY.getX(pan),
+                    ~translateY=Animated.ValueXY.getY(pan),
+                    (),
+                  ),
+                ])
+              )>
+        ...children
+      </Animated.View>
     </View>,
 };
