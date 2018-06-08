@@ -1,9 +1,18 @@
 open BsReactNative;
 
 type coordinates = {
-  mutable x: float,
-  mutable y: float,
+  x: float,
+  y: float,
 };
+
+type mutableCoordinates =
+  ref(
+    {
+      .
+      "x": float,
+      "y": float,
+    },
+  );
 
 type size = {
   width: float,
@@ -19,15 +28,14 @@ type gestureTypes =
 type state = {
   pan: Animated.ValueXY.t,
   panResponder: option(PanResponder.t),
-  panListener: ref(string),
+  childCoordinates: mutableCoordinates,
+  panListener: string,
 };
 
 type action =
   | SetPanResponder;
 
-let childCoordinates = {x: 0., y: 0.};
-
-let resetAnimatedPan = pan => Animated.ValueXY.extractOffset(pan);
+let resetPan = pan => Animated.ValueXY.extractOffset(pan);
 
 let moveChild = (~x=0., ~y=0., ~duration=300., ~pan, ()) =>
   Animated.(
@@ -37,7 +45,7 @@ let moveChild = (~x=0., ~y=0., ~duration=300., ~pan, ()) =>
       ~duration,
       (),
     )
-    |. CompositeAnimation.start(~callback=(_) => resetAnimatedPan(pan), ())
+    |. CompositeAnimation.start(~callback=(_) => resetPan(pan), ())
   );
 
 let getWindowSize = () => {
@@ -48,7 +56,7 @@ let getWindowSize = () => {
   };
 };
 
-let respondToGesture = (gesture, pan) =>
+let handleGestureType = (gesture, pan) =>
   switch (gesture) {
   | Corner({x, y}) => moveChild(~x, ~y, ~pan, ())
   | TopBottom(y) => moveChild(~y, ~pan, ())
@@ -56,33 +64,33 @@ let respondToGesture = (gesture, pan) =>
   | TouchMovement => Js.log("Touched or moved the child component")
   };
 
-let handleTouch = (childSize, pan) => {
-  resetAnimatedPan(pan);
+let handleRelease = (childSize, childCoordinates, pan) => {
+  resetPan(pan);
   let windowSize = getWindowSize();
-  let childLeft = childCoordinates.x;
+  let childLeft = childCoordinates##x;
   let childRight = childLeft +. childSize.width;
-  let childTop = childCoordinates.y;
+  let childTop = childCoordinates##y;
   let childBottom = childTop +. childSize.height;
   pan
   |> (
     switch (childLeft, childTop, childRight, childBottom) {
     | (_, t, r, _) when t < 0. && r > windowSize.width =>
-      respondToGesture(Corner({x: windowSize.width -. r, y: -. t}))
+      handleGestureType(Corner({x: windowSize.width -. r, y: -. t}))
     | (l, t, _, _) when l < 0. && t < 0. =>
-      respondToGesture(Corner({x: -. l, y: -. t}))
+      handleGestureType(Corner({x: -. l, y: -. t}))
     | (l, _, _, b) when l < 0. && b > windowSize.height =>
-      respondToGesture(Corner({x: -. l, y: windowSize.height -. b}))
+      handleGestureType(Corner({x: -. l, y: windowSize.height -. b}))
     | (_, _, r, b) when b > windowSize.height && r > windowSize.width =>
-      respondToGesture(
+      handleGestureType(
         Corner({x: windowSize.width -. r, y: windowSize.height -. b}),
       )
-    | (_, t, _, _) when t < 0. => respondToGesture(TopBottom(-. t))
-    | (l, _, _, _) when l < 0. => respondToGesture(LeftRight(-. l))
+    | (_, t, _, _) when t < 0. => handleGestureType(TopBottom(-. t))
+    | (l, _, _, _) when l < 0. => handleGestureType(LeftRight(-. l))
     | (_, _, _, b) when b > windowSize.height =>
-      respondToGesture(TopBottom(windowSize.height -. b))
+      handleGestureType(TopBottom(windowSize.height -. b))
     | (_, _, r, _) when r > windowSize.width =>
-      respondToGesture(LeftRight(windowSize.width -. r))
-    | (_, _, _, _) => respondToGesture(TouchMovement)
+      handleGestureType(LeftRight(windowSize.width -. r))
+    | (_, _, _, _) => handleGestureType(TouchMovement)
     }
   );
   ();
@@ -95,7 +103,8 @@ let make = (~childSize: size, children) => {
   initialState: () => {
     pan: Animated.ValueXY.create(~x=0., ~y=0.),
     panResponder: None,
-    panListener: ref(""),
+    childCoordinates: ref({"x": 0., "y": 0.}),
+    panListener: "",
   },
   reducer: (action, state) =>
     switch (action) {
@@ -109,26 +118,26 @@ let make = (~childSize: size, children) => {
                 ~onStartShouldSetPanResponder=callback((_e, _g) => true),
                 ~onPanResponderMove=`update([`XY(state.pan)]),
                 ~onPanResponderRelease=
-                  callback((_e, _g) => handleTouch(childSize, state.pan)),
+                  callback((_e, _g) =>
+                    handleRelease(
+                      childSize,
+                      state.childCoordinates^,
+                      state.pan,
+                    )
+                  ),
                 (),
               )
             ),
           ),
+        panListener:
+          Animated.ValueXY.addListener(state.pan, raw =>
+            state.childCoordinates := raw
+          ),
       })
     },
-  didMount: self => {
-    self.state.panListener :=
-      Animated.ValueXY.addListener(
-        self.state.pan,
-        raw => {
-          childCoordinates.x = raw##x;
-          childCoordinates.y = raw##y;
-        },
-      );
-    self.send(SetPanResponder);
-  },
+  didMount: self => self.send(SetPanResponder),
   willUnmount: ({state}) =>
-    state.panListener^ |> Animated.ValueXY.removeListener(state.pan),
+    state.panListener |> Animated.ValueXY.removeListener(state.pan),
   render: ({state}) =>
     switch (state.panResponder) {
     | Some(panHandler) =>
@@ -141,6 +150,7 @@ let make = (~childSize: size, children) => {
                       ~translateY=Animated.ValueXY.getY(state.pan),
                       (),
                     ),
+                    position(Absolute),
                   ])
                 )>
           ...children
